@@ -7,7 +7,7 @@ $dbname = "spamprotection";
 // Create connection
 $conn = new mysqli($servername, $username, $password, $dbname);
 
-// Allow CORS
+// Allow CORS and set content type
 allowCORS();
 
 try {
@@ -21,13 +21,9 @@ try {
 }
 
 function allowCORS() {
-    // Allow requests from any origin
     header('Access-Control-Allow-Origin: *');
-    // Allow the GET and PUT methods from any origin
     header('Access-Control-Allow-Methods: GET, PUT');
-    // Allow the Content-Type header in requests
     header('Access-Control-Allow-Headers: Content-Type');
-    // Set content type
     header('Content-Type: application/json');
 }
 
@@ -38,7 +34,6 @@ function checkConnection($initialCheck = false) {
         throw new Exception("Connection failed: " . $conn->connect_error);
     }
 
-    // Log success message only during the initial connection check
     if ($initialCheck) {
         error_log('Connected to the database successfully.');
     }
@@ -51,7 +46,7 @@ function createSpamReportTable() {
         id INT AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(255),
         content TEXT,
-        blocked BOOLEAN DEFAULT 0,
+        state BOOLEAN DEFAULT 0,
         resolved BOOLEAN DEFAULT 0,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )";
@@ -62,7 +57,9 @@ function createSpamReportTable() {
 }
 
 function handleAPIRequests($conn) {
-    switch ($_SERVER['REQUEST_METHOD']) {
+    $requestMethod = $_SERVER['REQUEST_METHOD'];
+
+    switch ($requestMethod) {
         case 'GET':
             handleGetRequest($conn);
             break;
@@ -80,24 +77,18 @@ function handleGetRequest($conn) {
     $reports = [];
 
     if ($result) {
-        // Check if there are rows in the result set
         if ($result->num_rows > 0) {
             while ($row = $result->fetch_assoc()) {
                 $reports[] = $row;
             }
+            $result->free();
         }
-        // Free the result set
-        $result->free();
     } else {
-        // Handle the case where the query fails
         echo json_encode(['error' => 'Error executing query: ' . $conn->error]);
         return;
     }
 
-    // Create an associative array with the desired name
     $response = ['reports' => $reports];
-
-    // Encode and echo the response
     echo json_encode($response);
 }
 
@@ -107,26 +98,22 @@ function handlePutRequest($conn) {
     if ($put_data) {
         parse_str($put_data, $put_vars);
 
-        if (isset($put_vars['reportId'])) {
+        if (isset($put_vars['reportId'], $put_vars['action'])) {
             $reportId = $put_vars['reportId'];
 
-            if (isset($put_vars['action'])) {
-                switch ($put_vars['action']) {
-                    case 'block':
-                        handleBlockContent($conn, $reportId);
-                        break;
-                    case 'resolve':
-                        handleResolveTicket($conn, $reportId);
-                        break;
-                    default:
-                        echo json_encode(['error' => 'Invalid action']);
-                        break;
-                }
-            } else {
-                echo json_encode(['error' => 'Action not specified']);
+            switch ($put_vars['action']) {
+                case 'block':
+                    handleBlockContent($conn, $reportId);
+                    break;
+                case 'resolve':
+                    handleResolveTicket($conn, $reportId);
+                    break;
+                default:
+                    echo json_encode(['error' => 'Invalid action']);
+                    break;
             }
         } else {
-            echo json_encode(['error' => 'Report ID not specified']);
+            echo json_encode(['error' => 'Report ID or action not specified']);
         }
     } else {
         echo json_encode(['error' => 'PUT data not received']);
@@ -144,6 +131,4 @@ function handleResolveTicket($conn, $reportId) {
     $conn->query("UPDATE reports SET state = 'CLOSED' WHERE id = '$quotedReportId'");
     exit('Ticket resolved successfully');
 }
-
-
 ?>
